@@ -31,6 +31,8 @@
 
 const int RXPACKET_MAX_LEN = 1024;
 const int PKT_ID = 4;
+const int PKT_LENGTH_L = 5;
+const int PKT_LENGTH_H = 6;
 const int PKT_PARAMETER0 = 8;
 
 using namespace dynamixel;
@@ -87,20 +89,36 @@ int GroupFastBulkRead::rxPacket()
     if (NULL == rxpacket)
         return result;
 
-    do {
-        result = ph_->rxPacket(port_, rxpacket, true);
-    } while ((COMM_SUCCESS == result) && (BROADCAST_ID != rxpacket[PKT_ID]));
+    result = ph_->rxPacket(port_, rxpacket, true);
+    if (COMM_SUCCESS == result) {
+        size_t expected_length = 1;  // instruction + (error, ID, data, CRC) per servo
+        for (int i = 0; i < count; ++i)
+            expected_length += length_list_[id_list_[i]] + 4;
 
-    if ((COMM_SUCCESS == result) && (BROADCAST_ID == rxpacket[PKT_ID])) {
+        if (rxpacket[PKT_ID] != BROADCAST_ID ||
+            DXL_MAKEWORD(rxpacket[PKT_LENGTH_L], rxpacket[PKT_LENGTH_H]) != expected_length) {
+            result = COMM_RX_CORRUPT;
+        } else {
+            // Validate the entire aggregate before modifying any servo's data.
+            int index = PKT_PARAMETER0;
+            for (int i = 0; i < count; ++i) {
+                uint8_t id = id_list_[i];
+                *error_list_[id] = rxpacket[index];
+                if (rxpacket[index + 1] != id || (rxpacket[index] & 0x7F) != 0)
+                    result = COMM_RX_CORRUPT;
+                index += length_list_[id_list_[i]] + 4;
+            }
+        }
+    }
+
+    if (COMM_SUCCESS == result) {
         int index = PKT_PARAMETER0;
         for (int i = 0; i < count; ++i) {
             uint8_t id = id_list_[i];
-            uint16_t length = length_list_[id];
-            *error_list_[id] = (uint8_t)rxpacket[index];
-            for (uint16_t s = 0; s < length; s++) {
+            uint16_t length = length_list_[id_list_[i]];
+            for (uint16_t s = 0; s < length; s++)
                 data_list_[id][s] = rxpacket[index + 2 + s];
-            }
-            index += (length + 4);
+            index += length + 4;
         }
         last_result_ = true;
     }
