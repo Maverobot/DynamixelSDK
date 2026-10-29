@@ -105,4 +105,11 @@ ament_python_install_package(dynamixel_easy_sdk PACKAGE_DIR "src/dynamixel_easy_
 ament_export_targets(${PROJECT_NAME} HAS_LIBRARY_TARGET)
 ament_export_include_directories(include)
 ament_export_libraries(${PROJECT_NAME})
+if(BUILD_TESTING)
+  enable_testing()
+  add_executable(read_reply_validation test/read_reply_validation.cpp)
+  target_link_libraries(read_reply_validation dynamixel_sdk)
+  add_test(NAME read_reply_validation COMMAND read_reply_validation)
+endif()
+
 ament_package()

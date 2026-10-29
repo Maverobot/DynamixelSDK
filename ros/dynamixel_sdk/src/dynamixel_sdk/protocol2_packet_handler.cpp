@@ -705,20 +705,25 @@ int Protocol2PacketHandler::readRx(PortHandler *port, uint8_t id, uint16_t lengt
   if (rxpacket == NULL)
     return result;
   
-  do {
-    result = rxPacket(port, rxpacket);
-  } while (result == COMM_SUCCESS && rxpacket[PKT_ID] != id);
-
-  if (result == COMM_SUCCESS && rxpacket[PKT_ID] == id)
+  result = rxPacket(port, rxpacket);
+  if (result == COMM_SUCCESS)
   {
     if (error != 0)
-      *error = (uint8_t)rxpacket[PKT_ERROR];
+      *error = rxpacket[PKT_ERROR];
 
-    for (uint16_t s = 0; s < length; s++)
+    // LENGTH includes instruction, error and CRC; rxPacket has removed stuffing.
+    // Alert alone leaves register data valid, unlike an instruction error.
+    if (rxpacket[PKT_ID] != id ||
+        DXL_MAKEWORD(rxpacket[PKT_LENGTH_L], rxpacket[PKT_LENGTH_H]) != length + 4 ||
+        (rxpacket[PKT_ERROR] & 0x7F) != 0)
     {
-      data[s] = rxpacket[PKT_PARAMETER0 + 1 + s];
+      result = COMM_RX_CORRUPT;
     }
-    //memcpy(data, &rxpacket[PKT_PARAMETER0+1], length);
+    else
+    {
+      for (uint16_t s = 0; s < length; s++)
+        data[s] = rxpacket[PKT_PARAMETER0 + 1 + s];
+    }
   }
 
   free(rxpacket);
@@ -728,46 +733,10 @@ int Protocol2PacketHandler::readRx(PortHandler *port, uint8_t id, uint16_t lengt
 
 int Protocol2PacketHandler::readTxRx(PortHandler *port, uint8_t id, uint16_t address, uint16_t length, uint8_t *data, uint8_t *error)
 {
-  int result                  = COMM_TX_FAIL;
-
-  uint8_t txpacket[14]        = {0};
-  uint8_t *rxpacket           = (uint8_t *)malloc(RXPACKET_MAX_LEN);
-  //(length + 11 + (length/3));  // (length/3): consider stuffing
-
-  if (rxpacket == NULL)
+  int result = readTx(port, id, address, length);
+  if (result != COMM_SUCCESS)
     return result;
-  
-  if (id >= BROADCAST_ID)
-  {
-    free(rxpacket);
-    return COMM_NOT_AVAILABLE;
-  }
-
-  txpacket[PKT_ID]            = id;
-  txpacket[PKT_LENGTH_L]      = 7;
-  txpacket[PKT_LENGTH_H]      = 0;
-  txpacket[PKT_INSTRUCTION]   = INST_READ;
-  txpacket[PKT_PARAMETER0+0]  = (uint8_t)DXL_LOBYTE(address);
-  txpacket[PKT_PARAMETER0+1]  = (uint8_t)DXL_HIBYTE(address);
-  txpacket[PKT_PARAMETER0+2]  = (uint8_t)DXL_LOBYTE(length);
-  txpacket[PKT_PARAMETER0+3]  = (uint8_t)DXL_HIBYTE(length);
-
-  result = txRxPacket(port, txpacket, rxpacket, error);
-  if (result == COMM_SUCCESS)
-  {
-    if (error != 0)
-      *error = (uint8_t)rxpacket[PKT_ERROR];
-
-    for (uint16_t s = 0; s < length; s++)
-    {
-      data[s] = rxpacket[PKT_PARAMETER0 + 1 + s];
-    }
-    //memcpy(data, &rxpacket[PKT_PARAMETER0+1], length);
-  }
-
-  free(rxpacket);
-  //delete[] rxpacket;
-  return result;
+  return readRx(port, id, length, data, error);
 }
 
 int Protocol2PacketHandler::read1ByteTx(PortHandler *port, uint8_t id, uint16_t address)
