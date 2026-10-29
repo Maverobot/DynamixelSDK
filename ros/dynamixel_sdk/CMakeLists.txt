@@ -110,6 +110,14 @@ if(BUILD_TESTING)
   add_executable(read_reply_validation test/read_reply_validation.cpp)
   target_link_libraries(read_reply_validation dynamixel_sdk)
   add_test(NAME read_reply_validation COMMAND read_reply_validation)
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND
+      CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    add_executable(read_allocation_failure
+      test/read_allocation_failure.cpp
+      src/dynamixel_sdk/protocol2_packet_handler.cpp)
+    target_link_libraries(read_allocation_failure dynamixel_sdk "-Wl,--wrap=malloc")
+    add_test(NAME read_allocation_failure COMMAND read_allocation_failure)
+  endif()
 endif()
 
 ament_package()

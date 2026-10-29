@@ -703,7 +703,11 @@ int Protocol2PacketHandler::readRx(PortHandler *port, uint8_t id, uint16_t lengt
   //(length + 11 + (length/3));  // (length/3): consider stuffing
   
   if (rxpacket == NULL)
+  {
+    // readTx may already have acquired the port before this allocation.
+    port->is_using_ = false;
     return result;
+  }
   
   result = rxPacket(port, rxpacket);
   if (result == COMM_SUCCESS)
